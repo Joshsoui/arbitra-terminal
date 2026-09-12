@@ -1,11 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { calculatePaidSocialOpportunity } from "@/lib/paid-social";
 import type { MarketCode } from "@/lib/arbitra";
 import { MARKETS, MARKET_BY_CODE } from "@/lib/markets";
 
 type TargetMarket = "GLOBAL" | MarketCode;
+type View = "opportunities" | "intelligence" | "sources";
+type SourceStatus = {
+  mode: "demo" | "partial" | "live-ready";
+  connected: number;
+  totalSignalGroups: number;
+  persistence: boolean;
+  sources: Record<string, { configured: boolean; role: string }>;
+  note: string;
+};
 
 type Opportunity = {
   name:string; category:string; demand:number; confidence:number; metaAds:number; advertisers:number;
@@ -45,46 +54,86 @@ function scoreOpportunity(p:Opportunity,index:number,market:MarketCode){
 
 export default function Home(){
   const [target,setTarget]=useState<TargetMarket>("GLOBAL");
+  const [view,setView]=useState<View>("opportunities");
+  const [runtime,setRuntime]=useState<SourceStatus|null>(null);
   const isGlobal=target==="GLOBAL";
+
+  useEffect(()=>{
+    fetch("/api/system-status",{cache:"no-store"}).then(r=>r.json()).then(setRuntime).catch(()=>setRuntime(null));
+  },[]);
 
   const allRows=useMemo(()=>MARKETS.flatMap((marketDef)=>seeds.map((p,index)=>scoreOpportunity(p,index,marketDef.code))).sort((a,b)=>b.paid.score-a.paid.score),[]);
   const rows=useMemo(()=>isGlobal?allRows.slice(0,12):allRows.filter((row)=>row.market===target).slice(0,8),[allRows,isGlobal,target]);
   const top=rows[0];
   const selectedMarketDef=isGlobal?null:MARKET_BY_CODE[target as MarketCode];
   const sourceCount=isGlobal?4:top.sourceCount;
+  const runtimeLabel=runtime?.mode==="live-ready"?"LIVE READY":runtime?.mode==="partial"?"PARTIAL DATA":"DEMO MODE";
 
   return <main className="shell">
     <header className="topbar">
-      <div><div className="brand">ARBITRA TERMINAL</div><div className="subtitle">Global Product Intelligence · See demand before it reaches your market.</div></div>
-      <div className="headerRight"><span className="liveDot"/> {isGlobal?"GLOBAL OPPORTUNITY SCAN":`${target} MARKET`} <span className="badge">PAID SOCIAL ENGINE v0.4 · DEMO DATA</span></div>
+      <div><div className="brand">ARBITRA TERMINAL</div><div className="subtitle">Global Product Intelligence · Find demand before the market gets crowded.</div></div>
+      <div className="headerRight"><span className={runtime?.mode==="live-ready"?"liveDot":"liveDot demoDot"}/> {runtimeLabel}<span className="badge">ENGINE v0.5</span></div>
     </header>
 
+    <section className="navRow">
+      <div className="viewTabs">
+        <button className={view==="opportunities"?"viewTab active":"viewTab"} onClick={()=>setView("opportunities")}>Opportunities</button>
+        <button className={view==="intelligence"?"viewTab active":"viewTab"} onClick={()=>setView("intelligence")}>Intelligence</button>
+        <button className={view==="sources"?"viewTab active":"viewTab"} onClick={()=>setView("sources")}>Sources <span className="tabCount">{runtime?.connected??0}/4</span></button>
+      </div>
+      <div className="modeNote">{isGlobal?"GLOBAL SCAN · PRODUCT × MARKET":"MARKET VIEW · LOCAL OPPORTUNITY"}</div>
+    </section>
+
     <section className="marketStrip">
-      <span className="marketStripLabel">TARGET MARKET</span>
+      <span className="marketStripLabel">MARKET</span>
       <div className="marketTabs"><button className={isGlobal?"marketTab active":"marketTab"} onClick={()=>setTarget("GLOBAL")}>🌐 GLOBAL</button>{MARKETS.map((m)=><button key={m.code} className={m.code===target?"marketTab active":"marketTab"} onClick={()=>setTarget(m.code)}>{m.flag} {m.code}</button>)}</div>
     </section>
 
-    <section className="commandbar"><div><span className="muted">TARGET MARKET</span><div className="selectWrap"><select value={target} onChange={(e)=>setTarget(e.target.value as TargetMarket)}><option value="GLOBAL">🌐 Global · Find best market</option>{MARKETS.map((m)=><option key={m.code} value={m.code}>{m.flag} {m.name}</option>)}</select></div></div><div><span className="muted">MODE</span><strong>{isGlobal?"PRODUCT × COUNTRY RANKING":selectedMarketDef?.tiktok?"META + TIKTOK":"META"}</strong></div><div><span className="muted">SOURCE COVERAGE</span><strong>{isGlobal?"CROSS-MARKET":`${sourceCount}/4 · ${selectedMarketDef?.marketplaces.length?selectedMarketDef.marketplaces.join(" + "):"NO MARKETPLACE YET"}`}</strong></div><div className="command">{isGlobal?"BEST GLOBAL OPPORTUNITIES ↓":"TOP OPPORTUNITIES ↓"}</div></section>
-
-    <section className="hero">
-      <div className="metric"><div className="label">#1 Opportunity · {isGlobal?"GLOBAL":top.market}</div><div className="value nameValue">{top.name}</div><div className="micro">{top.marketDef.flag} {top.marketDef.name} · {top.category}</div></div>
-      <div className="metric"><div className="label">Opportunity Score</div><div className="value accent">{top.paid.score}</div><div className="micro">{top.paid.status}</div></div>
-      <div className="metric"><div className="label">Demand Forecast</div><div className="value">{top.demand}%</div><div className="micro">confidence {top.confidence}%</div></div>
-      <div className="metric"><div className="label">Expected Window</div><div className="value">{top.window}</div><div className="micro">target: {top.marketDef.name}</div></div>
+    <section className="controlBar">
+      <div><span className="muted">TARGET</span><div className="selectWrap"><select value={target} onChange={(e)=>setTarget(e.target.value as TargetMarket)}><option value="GLOBAL">🌐 Global · Best market automatically</option>{MARKETS.map((m)=><option key={m.code} value={m.code}>{m.flag} {m.name}</option>)}</select></div></div>
+      <div><span className="muted">RANKING</span><strong>{isGlobal?"PRODUCT × COUNTRY":"PRODUCTS IN MARKET"}</strong></div>
+      <div><span className="muted">DATA STATUS</span><strong>{runtime?`${runtime.connected}/4 SIGNAL GROUPS${runtime.persistence?" · DB ON":" · DB PENDING"}`:"CHECKING…"}</strong></div>
     </section>
 
-    <section className="panel opportunityPanel">
-      <div className="panelTitle"><div><h2>{isGlobal?"GLOBAL PRODUCT × MARKET OPPORTUNITIES":`TOP OPPORTUNITIES · ${top.marketDef.name.toUpperCase()}`}</h2><p>{isGlobal?"Ranks the strongest product-country combinations across all active consumer markets.":"Ranked for early paid-social entry in the selected target market."}</p></div><span className="status">{isGlobal?`${MARKETS.length} MARKETS`:`${sourceCount}/4 SOURCES`}</span></div>
-      <div className="tableWrap"><table className="table terminalTable"><thead><tr><th>#</th><th>Product</th>{isGlobal&&<th>Market</th>}<th>Demand</th><th>TikTok</th><th>Meta ads</th><th>Advertisers</th><th>Competition</th><th>Margin</th><th>Opportunity</th><th>Action</th></tr></thead><tbody>
-        {rows.map((p,i)=><tr key={`${p.name}-${p.market}`} className={i===0?"selected":""}><td className="rank">{String(i+1).padStart(2,"0")}</td><td><strong>{p.name}</strong><span className="cellSub">{p.category}</span></td>{isGlobal&&<td><strong>{p.marketDef.flag} {p.market}</strong><span className="cellSub">{p.marketDef.name}</span></td>}<td>{p.demand}%</td><td className={p.marketDef.tiktok&&p.tiktok>=80?"positive":""}>{p.marketDef.tiktok?p.tiktok:"N/A"}</td><td>{p.marketDef.meta?p.metaAds:"N/A"}</td><td>{p.marketDef.meta?p.advertisers:"N/A"}</td><td>{p.competition}</td><td>{p.margin}%</td><td><strong className="score">{p.paid.score}</strong></td><td><span className={`signal ${p.paid.status.replaceAll(" ","").toLowerCase()}`}>{p.paid.status}</span></td></tr>)}
-      </tbody></table></div>
-    </section>
+    {view==="opportunities"&&<>
+      <section className="hero compactHero">
+        <div className="metric featured"><div className="label">#1 Opportunity</div><div className="value nameValue">{top.name}</div><div className="micro">{top.marketDef.flag} {top.marketDef.name} · {top.category}</div></div>
+        <div className="metric"><div className="label">Opportunity</div><div className="value accent">{top.paid.score}</div><div className="micro">{top.paid.status}</div></div>
+        <div className="metric"><div className="label">Demand</div><div className="value">{top.demand}%</div><div className="micro">confidence {top.confidence}%</div></div>
+        <div className="metric"><div className="label">Window</div><div className="value">{top.window}</div><div className="micro">{top.marketDef.name}</div></div>
+      </section>
 
-    <section className="grid lowerGrid">
-      <div className="panel"><h2>MARKET PROPAGATION · {top.name.toUpperCase()}</h2><div className="route bigRoute">{top.route.split(" → ").map((m,i,a)=><span key={`${m}-${i}`} className="routePart"><span className={`node ${i===a.length-1?"target":""}`}>{m}<small>{i===0?"BREAKOUT":i===a.length-1?"TARGET / EARLY":"ACCELERATING"}</small></span>{i<a.length-1&&<span className="arrow">→</span>}</span>)}</div><div className="intel"><div><span>Demand forecast</span><b>{top.demand}%</b></div><div><span>TikTok momentum</span><b>{top.marketDef.tiktok?`${top.paid.tiktokMomentum}/100`:"N/A"}</b></div><div><span>Meta saturation</span><b>{top.marketDef.meta?`${top.paid.metaSaturation}/100`:"N/A"}</b></div><div><span>Entry window</span><b>{top.window}</b></div></div></div>
-      <aside className="panel actionPanel"><h2>ARBITRA SIGNAL · {top.market}</h2><div className="actionLabel">{top.paid.status}</div><div className="actionScore">{top.paid.score}<small>/100</small></div><p>{isGlobal?`ARBITRA currently ranks ${top.name} in ${top.marketDef.name} as the strongest product-market pair in the global scan.`:`Demand is propagating toward ${top.marketDef.name}. ARBITRA scores the local entry window against available paid-social and marketplace competition signals.`}</p><div className="rule"><span>Target market</span><b>{top.marketDef.flag} {top.marketDef.name}</b></div><div className="rule"><span>Google demand</span><b>{top.marketDef.google?"AVAILABLE":"PENDING"}</b></div><div className="rule"><span>Meta intelligence</span><b>{top.marketDef.meta?"AVAILABLE":"PENDING"}</b></div><div className="rule"><span>TikTok intelligence</span><b>{top.marketDef.tiktok?"AVAILABLE":"NOT AVAILABLE"}</b></div><div className="rule"><span>Marketplace</span><b>{top.marketDef.marketplaces.length?top.marketDef.marketplaces.join(", "):"PENDING"}</b></div></aside>
-    </section>
+      <section className="panel opportunityPanel">
+        <div className="panelTitle"><div><h2>{isGlobal?"BEST GLOBAL OPPORTUNITIES":`TOP OPPORTUNITIES · ${top.marketDef.name.toUpperCase()}`}</h2><p>{isGlobal?"Best product-market combinations across active consumer markets.":"Products ranked for early commercial entry in the selected market."}</p></div><span className="status">{isGlobal?`${MARKETS.length} MARKETS`:`${sourceCount}/4 COVERAGE`}</span></div>
+        <div className="tableWrap"><table className="table terminalTable"><thead><tr><th>#</th><th>Product</th>{isGlobal&&<th>Market</th>}<th>Demand</th><th>TikTok</th><th>Meta Ads</th><th>Competition</th><th>Margin</th><th>Score</th><th>Signal</th></tr></thead><tbody>
+          {rows.map((p,i)=><tr key={`${p.name}-${p.market}`} className={i===0?"selected":""} onClick={()=>{setTarget(p.market);setView("intelligence")}}><td className="rank">{String(i+1).padStart(2,"0")}</td><td><strong>{p.name}</strong><span className="cellSub">{p.category}</span></td>{isGlobal&&<td><strong>{p.marketDef.flag} {p.market}</strong><span className="cellSub">{p.marketDef.name}</span></td>}<td>{p.demand}%</td><td className={p.marketDef.tiktok&&p.tiktok>=80?"positive":""}>{p.marketDef.tiktok?p.tiktok:"—"}</td><td>{p.marketDef.meta?p.metaAds:"—"}</td><td>{p.competition}</td><td>{p.margin}%</td><td><strong className="score">{p.paid.score}</strong></td><td><span className={`signal ${p.paid.status.replaceAll(" ","").toLowerCase()}`}>{p.paid.status}</span></td></tr>)}
+        </tbody></table></div>
+        <div className="tableHint">Click an opportunity to inspect its market intelligence.</div>
+      </section>
+    </>}
 
-    <footer className="footer terminalFooter">DEMO MODE · Global ranking and country switching are functional, but displayed scores are interface seed data until live source credentials and persisted observations are connected. Never treat these scores as live market intelligence.</footer>
+    {view==="intelligence"&&<section className="grid intelligenceGrid">
+      <div className="panel"><div className="eyebrow">SELECTED OPPORTUNITY</div><h1 className="detailTitle">{top.name} <span>{top.marketDef.flag} {top.marketDef.name}</span></h1><div className="route bigRoute">{top.route.split(" → ").map((m,i,a)=><span key={`${m}-${i}`} className="routePart"><span className={`node ${i===a.length-1?"target":""}`}>{m}<small>{i===0?"BREAKOUT":i===a.length-1?"TARGET / EARLY":"ACCELERATING"}</small></span>{i<a.length-1&&<span className="arrow">→</span>}</span>)}</div><div className="intel"><div><span>Demand forecast</span><b>{top.demand}%</b></div><div><span>TikTok momentum</span><b>{top.marketDef.tiktok?`${top.paid.tiktokMomentum}/100`:"—"}</b></div><div><span>Meta saturation</span><b>{top.marketDef.meta?`${top.paid.metaSaturation}/100`:"—"}</b></div><div><span>Entry window</span><b>{top.window}</b></div></div><div className="explainBox"><strong>Why this matters</strong><p>ARBITRA compares demand acceleration, market propagation, paid-social saturation and marketplace competition to estimate whether this market is still early enough to test.</p></div></div>
+      <aside className="panel actionPanel"><div className="eyebrow">ARBITRA DECISION</div><div className="actionLabel">{top.paid.status}</div><div className="actionScore">{top.paid.score}<small>/100</small></div><p>Current model output for {top.name} in {top.marketDef.name}. Scores remain demo/model seed data until real observations are connected.</p><div className="rule"><span>Demand</span><b>{top.demand}%</b></div><div className="rule"><span>Competition</span><b>{top.competition}/100</b></div><div className="rule"><span>Margin proxy</span><b>{top.margin}%</b></div><div className="rule"><span>Data coverage</span><b>{top.sourceCount}/4</b></div></aside>
+    </section>}
+
+    {view==="sources"&&<section className="sourcesLayout">
+      <div className="panel sourceSummary"><div className="eyebrow">SYSTEM READINESS</div><div className="readinessNumber">{runtime?.connected??0}<small>/4</small></div><h2>SIGNAL GROUPS CONFIGURED</h2><p>{runtime?.persistence?"Supabase persistence is configured.":"Historical persistence still needs Supabase credentials/configuration."}</p></div>
+      <div className="sourceGrid">
+        {[
+          ["Google","google","Demand formation + cross-market search momentum"],
+          ["Meta","meta","Advertiser saturation + commercial competition"],
+          ["TikTok","tiktok","Early cultural + creative acceleration"],
+          ["bol.com","bol","NL/BE marketplace validation"],
+          ["Amazon","amazon","International marketplace validation"],
+        ].map(([label,key,role])=>{
+          const configured=runtime?.sources?.[key]?.configured??false;
+          return <div className="panel sourceCard" key={key}><div className="sourceCardTop"><strong>{label}</strong><span className={configured?"sourceState ready":"sourceState pending"}>{configured?"CONFIGURED":"NEEDS SETUP"}</span></div><p>{role}</p><div className="sourceFoot">{configured?"Credentials/settings detected":"No live credentials detected"}</div></div>;
+        })}
+      </div>
+      <div className="panel nextSteps"><h2>NEXT TECHNICAL MILESTONE</h2><p>Connect Google first, persist observations, run the first historical backtest, then layer Meta/TikTok and marketplace validation on top. A source marked configured is not automatically proof that its upstream API is working.</p></div>
+    </section>}
+
+    <footer className="footer terminalFooter"><strong>DATA NOTICE</strong> · Global ranking and market switching are functional. Opportunity scores remain demo/model seed data until live observations and historical outcomes are connected and validated.</footer>
   </main>;
 }
