@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "backtest:propagation": "tsx scripts/run-propagation-backtest.ts",
     "trends:discover": "tsx scripts/discover-google-trends.ts",
+    "trends:qualify": "tsx scripts/qualify-google-candidates.ts",
     "trends:import": "tsx scripts/import-trend-candidates.ts"
   },
   "dependencies": {
