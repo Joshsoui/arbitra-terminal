@@ -53,10 +53,10 @@ export function normalizeGoogleTrendsRow(row: GoogleTrendsRow): RawObservation[]
   if (typeof row.percentGain === "number" && Number.isFinite(row.percentGain)) {
     observations.push({
       ...base,
-      signalType: "social_velocity",
+      signalType: "search_velocity",
       value: Math.max(0, row.percentGain),
-      unit: "google_trends_percent_gain_proxy",
-      confidence: 0.6,
+      unit: "google_trends_percent_gain",
+      confidence: 0.85,
     });
   }
 
