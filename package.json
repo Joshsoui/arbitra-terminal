@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "backtest:propagation": "tsx scripts/run-propagation-backtest.ts",
-    "trends:discover": "tsx scripts/discover-google-trends.ts"
+    "trends:discover": "tsx scripts/discover-google-trends.ts",
+    "trends:import": "tsx scripts/import-trend-candidates.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",
