@@ -1,4 +1,4 @@
-export type MarketCode = "US" | "UK" | "DE" | "NL";
+export type MarketCode = "US" | "CA" | "MX" | "BR" | "UK" | "DE" | "FR" | "NL" | "BE" | "ES" | "IT" | "SE" | "PL" | "AU" | "JP" | "KR" | "IN";
 
 export type MarketSignal = {
   market: MarketCode;
