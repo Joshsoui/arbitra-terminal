@@ -1,7 +1,9 @@
 import type { MarketCode } from "./arbitra";
 import type { PaidSocialSignal } from "./paid-social";
 
-const MARKET_COUNTRY: Record<MarketCode, string> = { US: "US", UK: "GB", DE: "DE", NL: "NL" };
+const MARKET_COUNTRY: Record<MarketCode, string> = {
+  US:"US", CA:"CA", MX:"MX", BR:"BR", UK:"GB", DE:"DE", FR:"FR", NL:"NL", BE:"BE", ES:"ES", IT:"IT", SE:"SE", PL:"PL", AU:"AU", JP:"JP", KR:"KR", IN:"IN",
+};
 
 type MetaAd = { id?: string; page_id?: string; ad_creation_time?: string; ad_delivery_start_time?: string; ad_delivery_stop_time?: string };
 
