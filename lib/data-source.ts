@@ -6,7 +6,7 @@ export type RawObservation = {
   market: MarketCode;
   observedAt: string;
   source: string;
-  signalType: "search_interest" | "social_velocity" | "ad_activity" | "marketplace_rank" | "price" | "seller_count" | "review_velocity";
+  signalType: "search_interest" | "search_velocity" | "social_velocity" | "ad_activity" | "marketplace_rank" | "price" | "seller_count" | "review_velocity";
   value: number;
   unit?: string;
   confidence: number;
