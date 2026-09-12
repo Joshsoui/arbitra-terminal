@@ -1,4 +1,6 @@
-export type CandidateMarket = "US" | "UK" | "DE" | "NL";
+import type { MarketCode } from "./arbitra";
+
+export type CandidateMarket = MarketCode;
 
 export type TrendCandidate = {
   id?: string;
@@ -79,145 +81,77 @@ const SYNONYM_GROUPS: string[][] = [
 const SYNONYM_LOOKUP = buildSynonymLookup();
 
 function buildSynonymLookup() {
-  const map = new Map<string, string>();
+  const lookup = new Map<string, string>();
   for (const group of SYNONYM_GROUPS) {
-    const canonical = normalizeBasic(group[0]);
-    for (const alias of group) map.set(normalizeBasic(alias), canonical);
+    const canonical = normalizeBase(group[0]);
+    for (const alias of group) lookup.set(normalizeBase(alias), canonical);
   }
-  return map;
+  return lookup;
 }
 
-function normalizeBasic(value: string) {
-  return value
+function normalizeBase(input: string) {
+  return input
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/&/g, " and ")
+    .replace(/\b\d+(?:[.,]\d+)?\s?(?:mm|cm|m|ml|cl|l|g|kg|oz|lb|inch|inches|pack|pcs|stuks|stuk)\b/g, " ")
+    .replace(/\b(?:black|white|red|blue|green|pink|purple|yellow|orange|grey|gray|zwart|wit|rood|blauw|groen|roze|paars|geel|grijs|schwarz|weiss|weiß|rot|blau|grun|grün|rosa|gelb|grau)\b/g, " ")
     .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function stripCommercialNoise(value: string) {
-  return value
-    .replace(/\b\d+(?:[.,]\d+)?\s?(?:ml|l|cl|oz|kg|g|mg|cm|mm|m|inch|inches|w|kw|mah|gb|tb|pack|pcs|piece|pieces|stuks|stuck|stück)\b/gi, " ")
-    .replace(/\b(?:set|bundle|kit|pack of)\s*\d*\b/gi, " ")
-    .replace(/\b(?:black|white|red|blue|green|pink|beige|zwart|wit|rood|blauw|groen|roze|schwarz|weiss|weiß|rot|blau|grun|grün)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export function normalizeProductTerm(term: string) {
-  const basic = normalizeBasic(term);
-  const synonym = SYNONYM_LOOKUP.get(basic);
-  const cleaned = stripCommercialNoise(synonym ?? basic);
-  const tokens = cleaned
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter((token) => !STOPWORDS.has(token));
-
-  return {
-    normalized: tokens.join(" "),
-    tokens: [...new Set(tokens)].sort(),
-    synonymCanonical: synonym ?? null,
-  };
-}
-
-function containsHint(normalized: string, hints: string[]) {
-  return hints.some((hint) => normalized === hint || normalized.includes(` ${hint} `) || normalized.startsWith(`${hint} `) || normalized.endsWith(` ${hint}`));
+export function normalizeProductTerm(input: string) {
+  const base = normalizeBase(input);
+  const synonym = SYNONYM_LOOKUP.get(base);
+  const source = synonym ?? base;
+  const tokens = source.split(" ").filter(Boolean).filter((token) => !STOPWORDS.has(token));
+  return { normalizedTerm: source, canonicalTokens: Array.from(new Set(tokens)).sort() };
 }
 
 export function qualifyTrendCandidate(candidate: TrendCandidate): QualificationResult {
-  const { normalized, tokens, synonymCanonical } = normalizeProductTerm(candidate.term);
-  const reasons: string[] = [];
-
-  if (!normalized || normalized.length < 3) {
-    return { label: "NON_PRODUCT", confidence: 0.98, reasons: ["Term is empty or too short after normalization"], normalizedTerm: normalized, canonicalTokens: tokens };
-  }
-
-  const padded = ` ${normalized} `;
-  if (containsHint(padded, NON_PRODUCT_HINTS)) {
-    return { label: "NON_PRODUCT", confidence: 0.9, reasons: ["Contains a strong news, entertainment, sport, or event signal"], normalizedTerm: normalized, canonicalTokens: tokens };
-  }
-
-  if (synonymCanonical) {
-    reasons.push("Matches a known multilingual product synonym group");
-    return { label: "PRODUCT", confidence: 0.98, reasons, normalizedTerm: synonymCanonical, canonicalTokens: normalizeProductTerm(synonymCanonical).tokens };
-  }
-
-  const productHint = containsHint(padded, PRODUCT_HINTS);
-  if (productHint) reasons.push("Contains a strong physical-product noun");
-
-  const tokenCount = tokens.length;
-  if (tokenCount >= 2 && tokenCount <= 6) reasons.push("Term shape resembles a product query");
-
-  const hasQuestionIntent = /\b(how|why|when|where|who|wat|waarom|wanneer|waar|wie|wie|warum|wann|wo|wer)\b/i.test(candidate.term);
-  if (hasQuestionIntent) reasons.push("Contains informational/question intent");
-
-  let score = 0.35;
-  if (productHint) score += 0.4;
-  if (tokenCount >= 2 && tokenCount <= 6) score += 0.15;
-  if (hasQuestionIntent) score -= 0.35;
-  if (tokenCount > 8) score -= 0.2;
-
-  score = Math.max(0, Math.min(1, score));
-  if (score >= 0.72) return { label: "PRODUCT", confidence: score, reasons, normalizedTerm: normalized, canonicalTokens: tokens };
-  if (score <= 0.3) return { label: "NON_PRODUCT", confidence: 1 - score, reasons, normalizedTerm: normalized, canonicalTokens: tokens };
-  return { label: "REVIEW", confidence: 1 - Math.abs(0.5 - score), reasons, normalizedTerm: normalized, canonicalTokens: tokens };
+  const { normalizedTerm, canonicalTokens } = normalizeProductTerm(candidate.term);
+  const haystack = ` ${normalizedTerm} `;
+  const nonProduct = NON_PRODUCT_HINTS.filter((hint) => haystack.includes(` ${normalizeBase(hint)} `));
+  const productHints = PRODUCT_HINTS.filter((hint) => canonicalTokens.includes(normalizeBase(hint)));
+  const knownProduct = SYNONYM_LOOKUP.has(normalizeBase(candidate.term));
+  if (nonProduct.length > 0 && !knownProduct) return { label: "NON_PRODUCT", confidence: 0.9, reasons: [`Non-product signals: ${nonProduct.slice(0,3).join(", ")}`], normalizedTerm, canonicalTokens };
+  if (knownProduct) return { label: "PRODUCT", confidence: 0.98, reasons: ["Known multilingual product synonym"], normalizedTerm, canonicalTokens };
+  if (productHints.length > 0) return { label: "PRODUCT", confidence: Math.min(0.92, 0.68 + productHints.length * 0.08), reasons: [`Product nouns: ${productHints.slice(0,3).join(", ")}`], normalizedTerm, canonicalTokens };
+  if (canonicalTokens.length >= 2) return { label: "REVIEW", confidence: 0.55, reasons: ["Plausible product phrase but insufficient evidence"], normalizedTerm, canonicalTokens };
+  return { label: "REVIEW", confidence: 0.4, reasons: ["Insufficient evidence"], normalizedTerm, canonicalTokens };
 }
 
 function jaccard(a: string[], b: string[]) {
-  const setA = new Set(a);
-  const setB = new Set(b);
-  const intersection = [...setA].filter((token) => setB.has(token)).length;
-  const union = new Set([...setA, ...setB]).size;
+  const aa = new Set(a); const bb = new Set(b);
+  const intersection = [...aa].filter((value) => bb.has(value)).length;
+  const union = new Set([...aa, ...bb]).size;
   return union ? intersection / union : 0;
 }
 
-function containment(a: string[], b: string[]) {
-  if (!a.length || !b.length) return 0;
-  const setA = new Set(a);
-  const setB = new Set(b);
-  const overlap = [...setA].filter((token) => setB.has(token)).length;
-  return overlap / Math.min(setA.size, setB.size);
-}
-
-export function scoreProductSimilarity(a: string, b: string) {
-  const na = normalizeProductTerm(a);
-  const nb = normalizeProductTerm(b);
-
-  if (na.synonymCanonical && nb.synonymCanonical && na.synonymCanonical === nb.synonymCanonical) return 1;
-  if (na.normalized === nb.normalized && na.normalized) return 1;
-
-  const jac = jaccard(na.tokens, nb.tokens);
-  const cont = containment(na.tokens, nb.tokens);
-  const phraseBonus = na.normalized.includes(nb.normalized) || nb.normalized.includes(na.normalized) ? 0.12 : 0;
-  return Math.min(1, jac * 0.55 + cont * 0.33 + phraseBonus);
+export function scoreProductSimilarity(candidate: string, cluster: ProductCluster) {
+  const c = normalizeProductTerm(candidate);
+  const variants = [cluster.canonicalName, ...cluster.aliases].map(normalizeProductTerm);
+  return Math.max(...variants.map((variant) => {
+    const setScore = jaccard(c.canonicalTokens, variant.canonicalTokens);
+    const cSet = new Set(c.canonicalTokens); const vSet = new Set(variant.canonicalTokens);
+    const containment = Math.min(cSet.size, vSet.size) ? [...cSet].filter((t) => vSet.has(t)).length / Math.min(cSet.size, vSet.size) : 0;
+    const phraseBonus = c.normalizedTerm === variant.normalizedTerm ? 1 : c.normalizedTerm.includes(variant.normalizedTerm) || variant.normalizedTerm.includes(c.normalizedTerm) ? 0.88 : 0;
+    return Math.max(setScore * 0.72 + containment * 0.28, phraseBonus);
+  }));
 }
 
 export function matchCandidateToClusters(candidate: TrendCandidate, clusters: ProductCluster[]): MatchResult {
-  const qualification = qualifyTrendCandidate(candidate);
-  if (qualification.label === "NON_PRODUCT") {
-    return { clusterId: null, canonicalName: null, score: 0, decision: "NO_MATCH", reasons: qualification.reasons };
-  }
-
-  let best: { cluster: ProductCluster; score: number; alias: string } | null = null;
-  for (const cluster of clusters) {
-    for (const alias of [cluster.canonicalName, ...cluster.aliases]) {
-      const score = scoreProductSimilarity(candidate.term, alias);
-      if (!best || score > best.score) best = { cluster, score, alias };
-    }
-  }
-
-  if (!best) return { clusterId: null, canonicalName: null, score: 0, decision: "NO_MATCH", reasons: ["No existing product clusters available"] };
-
-  const reasons = [`Best lexical/semantic-normalized alias: ${best.alias}`];
-  if (best.score >= 0.86) return { clusterId: best.cluster.id, canonicalName: best.cluster.canonicalName, score: best.score, decision: "MATCH", reasons };
-  if (best.score >= 0.62) return { clusterId: best.cluster.id, canonicalName: best.cluster.canonicalName, score: best.score, decision: "REVIEW", reasons: [...reasons, "Similarity is plausible but below automatic merge threshold"] };
-  return { clusterId: null, canonicalName: null, score: best.score, decision: "NO_MATCH", reasons: [...reasons, "Similarity is below review threshold"] };
+  const ranked = clusters.map((cluster) => ({ cluster, score: scoreProductSimilarity(candidate.term, cluster) })).sort((a,b)=>b.score-a.score);
+  const best = ranked[0];
+  if (!best) return { clusterId: null, canonicalName: null, score: 0, decision: "NO_MATCH", reasons: ["No clusters available"] };
+  if (best.score >= 0.86) return { clusterId: best.cluster.id, canonicalName: best.cluster.canonicalName, score: Number(best.score.toFixed(3)), decision: "MATCH", reasons: ["High lexical/synonym similarity"] };
+  if (best.score >= 0.62) return { clusterId: best.cluster.id, canonicalName: best.cluster.canonicalName, score: Number(best.score.toFixed(3)), decision: "REVIEW", reasons: ["Possible product identity match"] };
+  return { clusterId: null, canonicalName: null, score: Number(best.score.toFixed(3)), decision: "NO_MATCH", reasons: ["Similarity below review threshold"] };
 }
 
-export function suggestCanonicalName(candidate: TrendCandidate) {
-  const normalized = normalizeProductTerm(candidate.term);
-  return normalized.synonymCanonical ?? normalized.normalized;
+export function suggestCanonicalName(term: string) {
+  const { normalizedTerm } = normalizeProductTerm(term);
+  return normalizedTerm.replace(/\b\w/g, (character) => character.toUpperCase());
 }
