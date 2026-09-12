@@ -7,7 +7,7 @@ type BolToken = { access_token: string; expires_in: number };
 
 export class BolMarketplaceSource implements MarketplaceIntelligenceSource {
   id = "bol";
-  markets: MarketCode[] = ["NL"];
+  markets: MarketCode[] = ["NL", "BE"];
   private token?: { value: string; expiresAt: number };
 
   constructor(private clientId = process.env.BOL_CLIENT_ID, private clientSecret = process.env.BOL_CLIENT_SECRET) {}
@@ -51,40 +51,34 @@ export class BolMarketplaceSource implements MarketplaceIntelligenceSource {
     );
   }
 
-  async productList(query: string, countryCode: "NL" | "BE" = "NL") {
+  async productList(query: string, countryCode: "NL" | "BE") {
     return this.request<{ products?: Array<{ ean: string; title: string }>; hasNextPage?: boolean }>("/products/list", {
       method: "POST",
       body: JSON.stringify({ countryCode, searchTerm: query, page: 1 }),
     });
   }
 
-  async competingOffers(ean: string, countryCode: "NL" | "BE" = "NL") {
+  async competingOffers(ean: string, countryCode: "NL" | "BE") {
     return this.request<{ offers?: Array<{ offerId?: string; retailerId?: string; price?: number; bestOffer?: boolean }> }>(
       `/products/${encodeURIComponent(ean)}/offers?country-code=${countryCode}`,
     );
   }
 
   async search(query: string, market: MarketCode): Promise<MarketplaceSearchSnapshot> {
-    if (market !== "NL") throw new Error(`bol adapter currently supports NL in ARBITRA, got ${market}`);
+    if (market !== "NL" && market !== "BE") throw new Error(`bol adapter supports NL/BE, got ${market}`);
+    const countryCode = market;
     const observedAt = new Date().toISOString();
-    const [volume, list] = await Promise.all([this.searchVolume(query), this.productList(query, "NL")]);
+    const [volume, list] = await Promise.all([this.searchVolume(query), this.productList(query, countryCode)]);
     const searchVolume = volume.searchTerms?.[0]?.total ?? volume.searchTerms?.[0]?.periods?.[0]?.value;
     const top = (list.products ?? []).slice(0, 20);
     const products: MarketplaceProduct[] = await Promise.all(top.map(async (item, index) => {
       let offers: Awaited<ReturnType<BolMarketplaceSource["competingOffers"]>> | undefined;
-      try { offers = await this.competingOffers(item.ean, "NL"); } catch { offers = undefined; }
+      try { offers = await this.competingOffers(item.ean, countryCode); } catch { offers = undefined; }
       const offerList = offers?.offers ?? [];
       const prices = offerList.map((offer) => offer.price).filter((price): price is number => typeof price === "number");
       return {
-        externalId: item.ean,
-        ean: item.ean,
-        title: item.title,
-        market,
-        source: this.id,
-        rank: index + 1,
-        sellerCount: offerList.length || undefined,
-        price: prices.length ? Math.min(...prices) : undefined,
-        currency: "EUR",
+        externalId: item.ean, ean: item.ean, title: item.title, market, source: this.id, rank: index + 1,
+        sellerCount: offerList.length || undefined, price: prices.length ? Math.min(...prices) : undefined, currency: "EUR",
         metadata: { searchVolume, offerCount: offerList.length },
       };
     }));
