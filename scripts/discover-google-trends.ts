@@ -1,6 +1,5 @@
 import { BigQuery } from "@google-cloud/bigquery";
-import { writeFile } from "node:fs/promises";
-import { mkdir } from "node:fs/promises";
+import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
   INTERNATIONAL_DISCOVERY_SQL,
@@ -19,9 +18,30 @@ function toDateString(value: unknown): string {
   return String(value).slice(0, 10);
 }
 
-async function main() {
+function makeBigQueryClient() {
   const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID;
-  const bigquery = new BigQuery(projectId ? { projectId } : undefined);
+  const inlineCredentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+  if (inlineCredentials) {
+    const credentials = JSON.parse(inlineCredentials) as {
+      client_email: string;
+      private_key: string;
+      project_id?: string;
+    };
+    return new BigQuery({
+      projectId: projectId || credentials.project_id,
+      credentials: {
+        client_email: credentials.client_email,
+        private_key: credentials.private_key,
+      },
+    });
+  }
+
+  return new BigQuery(projectId ? { projectId } : undefined);
+}
+
+async function main() {
+  const bigquery = makeBigQueryClient();
 
   console.log("ARBITRA Google Trends discovery: querying international rising terms...");
   const [internationalRows] = await bigquery.query({ query: INTERNATIONAL_DISCOVERY_SQL, location: "US" });
