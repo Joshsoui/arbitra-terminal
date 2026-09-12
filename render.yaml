@@ -27,3 +27,11 @@ services:
         sync: false
       - key: AMAZON_CREATORS_API_TOKEN
         sync: false
+      - key: META_AD_LIBRARY_ACCESS_TOKEN
+        sync: false
+      - key: META_GRAPH_API_VERSION
+        value: v24.0
+      - key: TIKTOK_TREND_API_ENDPOINT
+        sync: false
+      - key: TIKTOK_TREND_API_TOKEN
+        sync: false
