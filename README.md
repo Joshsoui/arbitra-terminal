@@ -43,6 +43,10 @@ npm run trends:discover
 
 The public dataset is useful for discovery and multi-year history for surfaced terms, but it is not a complete arbitrary-product database. Full arbitrary-term historical backfill should use the official Google Trends API once ARBITRA has access.
 
+### Daily ingestion cadence
+
+`render.yaml` defines an `arbitra-trend-ingestion` cron service (06:00 UTC) running `npm run ingest:daily`, which chains discovery → import → qualify/classify against Supabase. This is what turns the pipeline into an accumulating historical dataset instead of something that only runs when someone remembers to run it by hand. It does not yet include breakout detection, propagation-graph refresh or backtesting — those still require running `lib/historical-engine.ts`/`lib/backtest.ts` against promoted product observations, which is the next milestone below.
+
 ### Credentials
 
 The BigQuery client supports standard Google Application Default Credentials or Render-friendly inline credentials:
@@ -105,10 +109,12 @@ npm run backtest:propagation -- data/breakouts.json
 
 ## API
 
+- `GET /api/opportunities` — ranked product × market opportunities powering the terminal UI. Reads live `market_snapshots` from Supabase when configured; otherwise scores typed demo snapshots with the same `calculateForecast` engine, so the UI never has its own separate scoring logic.
 - `POST /api/forecast` — propagation forecast
 - `GET /api/paid-social` — paid-social opportunity signal
 - `GET /api/marketplace` — marketplace signal adapter
 - `POST /api/product-identity` — candidate qualification and product matching
+- `GET /api/system-status` — which data sources are configured
 
 ## Data integrity rule
 
@@ -116,9 +122,10 @@ ARBITRA must never present estimated signals as exact sales. Every production si
 
 ## Next data milestones
 
-1. Run and archive Google Trends discovery daily across supported markets.
+1. ~~Run and archive Google Trends discovery daily across supported markets.~~ Done via the `arbitra-trend-ingestion` Render cron job.
 2. Expand multilingual product identity and stable identifier matching.
-3. Persist marketplace and paid-social observations by market.
-4. Add source-coverage and freshness scoring to every opportunity.
-5. Request/enable official Google Trends API access for arbitrary-term five-year backfills.
-6. Reconstruct thousands of product trajectories and run the first true out-of-sample ARBITRA backtest.
+3. Promote qualified trend candidates into `products`/`market_snapshots` so `GET /api/opportunities` can run on live data instead of the demo fallback.
+4. Persist marketplace and paid-social observations by market.
+5. Add source-coverage and freshness scoring to every opportunity.
+6. Request/enable official Google Trends API access for arbitrary-term five-year backfills.
+7. Reconstruct thousands of product trajectories and run the first true out-of-sample ARBITRA backtest.

@@ -35,3 +35,25 @@ services:
         sync: false
       - key: TIKTOK_TREND_API_TOKEN
         sync: false
+
+  - type: cron
+    name: arbitra-trend-ingestion
+    runtime: node
+    plan: starter
+    # 06:00 UTC daily. Discovery -> import -> qualify/classify, so the historical
+    # trend_candidates dataset actually accumulates instead of only existing when
+    # someone runs the scripts by hand.
+    schedule: "0 6 * * *"
+    buildCommand: npm install --no-audit --no-fund
+    startCommand: npm run ingest:daily
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON
+        sync: false
