@@ -45,7 +45,17 @@ The public dataset is useful for discovery and multi-year history for surfaced t
 
 ### Daily ingestion cadence
 
-`render.yaml` defines an `arbitra-trend-ingestion` cron service (06:00 UTC) running `npm run ingest:daily`, which chains discovery → import → qualify/classify against Supabase. This is what turns the pipeline into an accumulating historical dataset instead of something that only runs when someone remembers to run it by hand. It does not yet include breakout detection, propagation-graph refresh or backtesting — those still require running `lib/historical-engine.ts`/`lib/backtest.ts` against promoted product observations, which is the next milestone below.
+`render.yaml` defines an `arbitra-trend-ingestion` cron service (06:00 UTC) running `npm run ingest:daily`, which chains discovery → import → qualify/classify → promote against Supabase. This is what turns the pipeline into an accumulating historical dataset instead of something that only runs when someone remembers to run it by hand.
+
+### Promoting candidates into live opportunities
+
+```bash
+npm run candidates:promote
+```
+
+`scripts/promote-candidates.ts` is what actually connects raw signals to `GET /api/opportunities`. For every `trend_candidates` row classified `product`: it creates (once) a matching `products` row, reruns `lib/normalization.ts` over that candidate's `trend_candidate_observations` to get a per-market demand time series, optionally calls the live Meta Ad Library adapter for the same term/market, and writes the result through `lib/market-snapshot.ts` into `market_snapshots` — which is the only table `GET /api/opportunities` actually reads.
+
+This phase only wires **Google Trends (search) + Meta Ad Library (ad saturation)**. `marketplaceCompetition` has no source yet (bol.com/Amazon aren't part of this pipeline) and always comes back as a neutral 50 rather than a value that would make the market look artificially uncompetitive — tracked explicitly per snapshot via `source_coverage` (fraction of the 3 signal groups — search/ads/marketplace — that actually had data). Breakout detection, propagation-graph refresh and backtesting are the next layer on top of this and still need to be run separately via `lib/historical-engine.ts`/`lib/backtest.ts` once enough snapshot history accumulates.
 
 ### Credentials
 
@@ -124,8 +134,12 @@ ARBITRA must never present estimated signals as exact sales. Every production si
 
 1. ~~Run and archive Google Trends discovery daily across supported markets.~~ Done via the `arbitra-trend-ingestion` Render cron job.
 2. Expand multilingual product identity and stable identifier matching.
-3. Promote qualified trend candidates into `products`/`market_snapshots` so `GET /api/opportunities` can run on live data instead of the demo fallback.
-4. Persist marketplace and paid-social observations by market.
-5. Add source-coverage and freshness scoring to every opportunity.
+3. ~~Promote qualified trend candidates into `products`/`market_snapshots` so `GET /api/opportunities` can run on live data instead of the demo fallback.~~ Done via `scripts/promote-candidates.ts`, wired into the daily cron — currently sourced from Google Trends + Meta Ad Library only.
+4. Persist marketplace observations (bol.com/Amazon) by market and wire them into the promotion step as the missing `marketplaceCompetition` source.
+5. Add freshness scoring (how stale is each snapshot) alongside the existing `source_coverage` fraction.
 6. Request/enable official Google Trends API access for arbitrary-term five-year backfills.
 7. Reconstruct thousands of product trajectories and run the first true out-of-sample ARBITRA backtest.
+
+## Known schema issue
+
+An earlier migration (`supabase/migrations/20260912_product_identity.sql`) tried to redefine `trend_candidates` with a different column set than `002_trend_discovery.sql`. Because Postgres `create table if not exists` silently no-ops when the table already exists, that redefinition never took effect — it has been removed from the migration file. `trend_candidates` is `(source, external_key, canonical_term, classification, product_id, first_seen_at, last_seen_at, metadata)`, full stop; treat `scripts/import-trend-candidates.ts` and `scripts/qualify-google-candidates.ts` as the source of truth if a future migration touches this table again.
