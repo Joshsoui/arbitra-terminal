@@ -8,9 +8,13 @@ import {
   type TrendCandidate,
 } from "../../../lib/product-identity";
 
+const marketSchema = z.enum([
+  "US", "CA", "MX", "BR", "UK", "DE", "FR", "NL", "BE", "ES", "IT", "SE", "PL", "AU", "JP", "KR", "IN",
+]);
+
 const candidateSchema = z.object({
   term: z.string().min(1),
-  market: z.enum(["US", "UK", "DE", "NL"]),
+  market: marketSchema,
   source: z.string().min(1).default("manual"),
   observedAt: z.string().optional(),
   categoryHint: z.string().nullable().optional(),
@@ -42,7 +46,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     qualification,
     match,
-    suggestedCanonicalName: suggestCanonicalName(candidate),
+    suggestedCanonicalName: suggestCanonicalName(candidate.term),
     matcherVersion: "identity-v0.1",
   });
 }

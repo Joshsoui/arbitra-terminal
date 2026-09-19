@@ -7,30 +7,33 @@ ARBITRA is a product-intelligence platform designed to detect how demand propaga
 
 ## Initial focus
 
-- Markets: US, UK, Germany, Netherlands
+- Major consumer markets across North America, Europe, Asia-Pacific and Latin America
 - Historical product-demand observations
 - Cross-market propagation detection
 - Forecast probability + confidence
-- Opportunity scoring
+- Paid-social opportunity scoring for Meta and TikTok
+- Marketplace validation and competition signals
 - Backtesting against historical outcomes
 - Terminal-style product and market intelligence UI
+
+The Terminal currently exposes selectable target markets including US, Canada, Mexico, Brazil, UK, Germany, France, Netherlands, Belgium, Spain, Italy, Sweden, Poland, Australia, Japan, South Korea and India. Source coverage is tracked separately per market; a selectable market does not imply identical live data coverage everywhere.
 
 ## Core principle
 
 ARBITRA separates two questions:
 
 1. **Demand Forecast** — where is demand likely to move next?
-2. **Opportunity Engine** — is that demand commercially attractive in the target market?
+2. **Opportunity Engine** — is that demand commercially attractive in the target market, especially for paid social?
 
 The long-term moat is the historical `prediction -> outcome` dataset ARBITRA builds over time.
 
 ## Historical intelligence pipeline
 
-`raw market observations -> candidate qualification -> product matching -> normalized demand -> breakout events -> propagation graph -> forecast -> backtest`
+`raw market observations -> candidate qualification -> product matching -> normalized demand -> breakout events -> propagation graph -> forecast -> paid-social opportunity -> backtest`
 
 ### Google Trends discovery source
 
-ARBITRA now includes a real first-party Google Trends ingestion path using Google's public BigQuery dataset.
+ARBITRA includes a first-party Google Trends ingestion path using Google's public BigQuery dataset.
 
 Run:
 
@@ -38,34 +41,19 @@ Run:
 npm run trends:discover
 ```
 
-This queries the latest public rising-term partition for:
+The public dataset is useful for discovery and multi-year history for surfaced terms, but it is not a complete arbitrary-product database. Full arbitrary-term historical backfill should use the official Google Trends API once ARBITRA has access.
 
-- United States (aggregated from DMA-level rows)
-- United Kingdom
-- Germany
-- Netherlands
+### Daily ingestion cadence
 
-and writes normalized observations to:
-
-```text
-data/generated/google-trends-observations.json
-```
-
-Then stage those observations in Supabase:
-
-```bash
-npm run trends:import -- data/generated/google-trends-observations.json
-```
-
-The public dataset is excellent for **discovery** and contains multi-year history for surfaced terms, but it is not a complete arbitrary-product database. Google only exposes top/rising terms through this public BigQuery dataset. Full arbitrary-term historical backfill should use the official Google Trends API once ARBITRA has alpha/API access.
+`render.yaml` defines an `arbitra-trend-ingestion` cron service (06:00 UTC) running `npm run ingest:daily`, which chains discovery → import → qualify/classify against Supabase. This is what turns the pipeline into an accumulating historical dataset instead of something that only runs when someone remembers to run it by hand. It does not yet include breakout detection, propagation-graph refresh or backtesting — those still require running `lib/historical-engine.ts`/`lib/backtest.ts` against promoted product observations, which is the next milestone below.
 
 ### Credentials
 
 The BigQuery client supports standard Google Application Default Credentials or Render-friendly inline credentials:
 
 ```env
-GCP_PROJECT_ID=
-GOOGLE_SERVICE_ACCOUNT_JSON=
+GOOGLE_CLOUD_PROJECT=
+GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON=
 ```
 
 Supabase staging requires:
@@ -75,25 +63,15 @@ NEXT_PUBLIC_SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
 
+Paid-social and marketplace adapters use environment-only credentials. See `.env.example` for the current set.
+
 ### Candidate staging is deliberate
 
-A rising Google query is **not automatically a product**. Search terms can be people, sport, news or entertainment. ARBITRA therefore stores Google discoveries first in:
-
-- `trend_candidates`
-- `trend_candidate_observations`
-
-with classification states:
-
-- `unclassified`
-- `product`
-- `non_product`
-- `ambiguous`
-
-Only qualified product candidates should be promoted into the canonical `products` and `observations` tables. This prevents noisy global search trends from corrupting the product propagation model.
+A rising Google query is **not automatically a product**. Search terms can be people, sport, news or entertainment. ARBITRA therefore stages discoveries for qualification before they enter the canonical product model.
 
 ### 1. Raw observations
 
-Every source adapter emits the same shape through `lib/data-source.ts`, including source, market, timestamp and confidence. Supported signal families now include search interest and search velocity; marketplace, social, advertising, pricing, seller and review signals plug into the same contract.
+Every source adapter emits the same shape through `lib/data-source.ts`, including source, market, timestamp and confidence. Signal families include search interest, search velocity, marketplace rank, price, seller count and paid-social indicators.
 
 ### 2. Normalization
 
@@ -109,13 +87,17 @@ Historical breakout events are converted into directional category-level edges s
 
 `US -> UK | probability 0.79 | median lag 13 days | n=184`
 
-The engine does **not** assume that all categories follow `US -> UK -> DE -> NL`; it learns the strongest routes from history.
+The engine does **not** assume one fixed country sequence; it learns the strongest routes from history.
 
 ### 5. Forecast
 
 `lib/propagation-forecast.ts` combines multiple confirmed upstream markets into a target-market breakout probability, confidence score and expected timing window.
 
-### 6. Walk-forward backtest
+### 6. Paid Social Opportunity
+
+`lib/paid-social.ts` combines demand probability, Meta saturation, TikTok momentum, marketplace competition and margin headroom into a paid-social opportunity score with actions such as `TEST NOW`, `EARLY TEST`, `WATCH` and `PASS`.
+
+### 7. Walk-forward backtest
 
 `lib/backtest.ts` performs time-aware validation. For every forecast, the target product and future events are excluded from the historical training set. Reports include Brier score, log loss, probability calibration, actual breakout outcomes and lead time.
 
@@ -127,7 +109,12 @@ npm run backtest:propagation -- data/breakouts.json
 
 ## API
 
-`POST /api/forecast` exposes the propagation model to the Terminal UI and future external integrations.
+- `GET /api/opportunities` — ranked product × market opportunities powering the terminal UI. Reads live `market_snapshots` from Supabase when configured; otherwise scores typed demo snapshots with the same `calculateForecast` engine, so the UI never has its own separate scoring logic.
+- `POST /api/forecast` — propagation forecast
+- `GET /api/paid-social` — paid-social opportunity signal
+- `GET /api/marketplace` — marketplace signal adapter
+- `POST /api/product-identity` — candidate qualification and product matching
+- `GET /api/system-status` — which data sources are configured
 
 ## Data integrity rule
 
@@ -135,9 +122,10 @@ ARBITRA must never present estimated signals as exact sales. Every production si
 
 ## Next data milestones
 
-1. Run and archive Google Trends discovery daily.
-2. Add product qualification + multilingual canonical product matching.
-3. Add marketplace rank/price/seller/review history.
-4. Add advertising and social acceleration signals.
-5. Request/enable official Google Trends API access for arbitrary-term five-year backfills.
-6. Reconstruct thousands of product trajectories and run the first true out-of-sample ARBITRA backtest.
+1. ~~Run and archive Google Trends discovery daily across supported markets.~~ Done via the `arbitra-trend-ingestion` Render cron job.
+2. Expand multilingual product identity and stable identifier matching.
+3. Promote qualified trend candidates into `products`/`market_snapshots` so `GET /api/opportunities` can run on live data instead of the demo fallback.
+4. Persist marketplace and paid-social observations by market.
+5. Add source-coverage and freshness scoring to every opportunity.
+6. Request/enable official Google Trends API access for arbitrary-term five-year backfills.
+7. Reconstruct thousands of product trajectories and run the first true out-of-sample ARBITRA backtest.

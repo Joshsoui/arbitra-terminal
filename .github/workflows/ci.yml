@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, initial-mvp, marketplace-signals]
   pull_request:
-    branches: [main, initial-mvp]
+    branches: [main, initial-mvp, marketplace-signals]
 
 jobs:
   build:
@@ -20,5 +20,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Typecheck
         run: npm run typecheck
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
