@@ -24,6 +24,8 @@ export type Forecast = {
   breakoutProbability: number;
   confidence: number;
   opportunityScore: number;
+  marginPercent: number;
+  commercialScore: number;
   status: "WATCH" | "EMERGING" | "EARLY ENTRY" | "SATURATED";
   reasons: string[];
 };
@@ -75,6 +77,8 @@ export function calculateForecast(product: ProductSnapshot, targetMarket: Market
     breakoutProbability: Math.round(breakoutProbability),
     confidence: Math.round(confidence),
     opportunityScore: Math.round(opportunityScore),
+    marginPercent: Math.round(marginPercent),
+    commercialScore: Math.round(commercialScore),
     status,
     reasons,
   };
