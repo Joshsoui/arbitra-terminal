@@ -13,7 +13,8 @@
     "trends:discover": "tsx scripts/discover-google-trends.ts",
     "trends:qualify": "tsx scripts/qualify-google-candidates.ts",
     "trends:import": "tsx scripts/import-trend-candidates.ts",
-    "ingest:daily": "tsx scripts/discover-google-trends.ts && tsx scripts/import-trend-candidates.ts data/generated/google-trends-observations.json && tsx scripts/qualify-google-candidates.ts data/generated/google-trends-observations.json --persist"
+    "candidates:promote": "tsx scripts/promote-candidates.ts",
+    "ingest:daily": "tsx scripts/discover-google-trends.ts && tsx scripts/import-trend-candidates.ts data/generated/google-trends-observations.json && tsx scripts/qualify-google-candidates.ts data/generated/google-trends-observations.json --persist && tsx scripts/promote-candidates.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

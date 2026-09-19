@@ -1,21 +1,11 @@
-create table if not exists trend_candidates (
-  id uuid primary key default gen_random_uuid(),
-  source text not null,
-  market_code text not null references markets(code),
-  term text not null,
-  normalized_term text,
-  observed_at timestamptz,
-  category_hint text,
-  qualification_label text check (qualification_label in ('PRODUCT','NON_PRODUCT','REVIEW')),
-  qualification_confidence numeric check (qualification_confidence between 0 and 1),
-  qualification_reasons jsonb not null default '[]'::jsonb,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  unique(source, market_code, term, observed_at)
-);
-
-create index if not exists trend_candidates_review_idx
-  on trend_candidates(qualification_label, qualification_confidence desc, created_at desc);
+-- trend_candidates is defined in 002_trend_discovery.sql (source, external_key,
+-- canonical_term, classification, product_id, first_seen_at, last_seen_at). An
+-- earlier version of this migration tried to redefine it here with a different
+-- column set (market_code, qualification_label, ...); since 002 already created
+-- the table, that `create table if not exists` silently no-opped and those
+-- columns never existed. Removed rather than left as misleading dead schema —
+-- scripts/qualify-google-candidates.ts and scripts/import-trend-candidates.ts
+-- are the source of truth for what trend_candidates actually looks like.
 
 create table if not exists product_identity_matches (
   id bigserial primary key,
